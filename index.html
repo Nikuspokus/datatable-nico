@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>x-data-table — Web Component (vanilla JS)</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu,
+          Cantarell, "Noto Sans", "Helvetica Neue", Arial, "Apple Color Emoji",
+          "Segoe UI Emoji";
+      }
+      body {
+        padding: 24px;
+        background: #0b0c0f;
+        color: #e5e7eb;
+      }
+      .demo {
+        max-width: 1100px;
+        margin: 0 auto;
+        display: grid;
+        gap: 16px;
+      }
+      .card {
+        background: #111827;
+        border: 1px solid #1f2937;
+        border-radius: 14px;
+        padding: 16px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 24px;
+      }
+      p {
+        margin: 0 0 12px;
+        color: #9ca3af;
+      }
+      code {
+        background: #0b1220;
+        padding: 2px 6px;
+        border-radius: 6px;
+        border: 1px solid #1f2937;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="demo">
+      <div class="card">
+        <h1>Web Component <code>&lt;x-data-table&gt;</code></h1>
+        <p>
+          Tri, recherche, pagination, sélection, évènements — 100% Vanilla JS +
+          Shadow DOM.
+        </p>
+      </div>
+
+      <x-data-table
+        id="peopleTable"
+        page-size="5"
+        selectable
+        caption="Liste des employés"
+      ></x-data-table>
+
+      <div class="card">
+        <strong>Utilisation rapide</strong>
+        <ol>
+          <li>Incluez le composant (script ci-dessous).</li>
+          <li>Définissez <code>columns</code> et <code>data</code> en JS.</li>
+          <li>
+            (Optionnel) Ajoutez <code>selectable</code>, <code>page-size</code>,
+            <code>caption</code>.
+          </li>
+        </ol>
+      </div>
+    </div>
+
+    <script type="module">
+      // ===== x-data-table: Web Component =====
+      const template = document.createElement("template");
+      template.innerHTML = `
+        <style>
+          :host { 
+            --xdt-bg: #0b1220;
+            --xdt-surface: #0c1426;
+            --xdt-border: #1f2937;
+            --xdt-text: #e5e7eb;
+            --xdt-muted: #9ca3af;
+            --xdt-accent: #60a5fa;
+            --xdt-danger: #ef4444;
+            --xdt-radius: 12px;
+            --xdt-input-bg: #0b1220;
+            --xdt-input-border: #1f2937;
+            display: block; color: var(--xdt-text);
+          }
+          .wrapper { background: var(--xdt-surface); border: 1px solid var(--xdt-border); border-radius: var(--xdt-radius); overflow: hidden; }
+          .toolbar { display: flex; align-items: center; gap: 8px; padding: 10px; border-bottom: 1px solid var(--xdt-border); background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0)); }
+          .toolbar input[type="search"] { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--xdt-input-border); background: var(--xdt-input-bg); color: var(--xdt-text); outline: none; }
+          .toolbar input[type="search"]:focus { border-color: var(--xdt-accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--xdt-accent) 30%, transparent); }
+          .table-wrap { overflow: auto; max-height: 60vh; }
+          table { width: 100%; border-collapse: separate; border-spacing: 0; }
+          caption { text-align: left; padding: 12px; color: var(--xdt-muted); font-size: 14px; }
+          thead th { position: sticky; top: 0; background: var(--xdt-surface); z-index: 1; }
+          th, td { padding: 10px 12px; border-bottom: 1px solid var(--xdt-border); text-align: left; font-size: 14px; }
+          tbody tr { transition: background .15s ease; }
+          tbody tr:hover { background: color-mix(in oklab, var(--xdt-accent) 15%, transparent); }
+          tbody tr[aria-selected="true"] { background: color-mix(in oklab, var(--xdt-accent) 25%, transparent); }
+          th.sortable { cursor: pointer; user-select: none; }
+          th.sortable .chevron { display: inline-block; margin-left: 6px; opacity: .6; transform: rotate(0deg); transition: transform .15s ease; }
+          th[aria-sort="ascending"] .chevron { transform: rotate(180deg); opacity: 1; }
+          tfoot td { padding: 0; }
+          .pagination { display: flex; gap: 6px; align-items: center; justify-content: space-between; padding: 8px 10px; border-top: 1px solid var(--xdt-border); background: linear-gradient(180deg, rgba(0,0,0,0), rgba(255,255,255,0.02)); }
+          .pagination .side { display: flex; gap: 6px; align-items: center; }
+          button { background: #0b1220; color: var(--xdt-text); border: 1px solid var(--xdt-border); border-radius: 10px; padding: 8px 10px; font: inherit; cursor: pointer; }
+          button[disabled] { opacity: .5; cursor: not-allowed; }
+          .page-btn[aria-current="true"] { outline: 2px solid var(--xdt-accent); }
+          .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
+          .checkbox { width: 18px; height: 18px; }
+        </style>
+        <div class="wrapper" part="wrapper">
+          <div class="toolbar" part="toolbar">
+            <input type="search" part="search" placeholder="Rechercher…" aria-label="Filtrer les lignes" />
+            <slot name="toolbar-end"></slot>
+          </div>
+          <div class="table-wrap" part="table-wrap">
+            <table role="grid" part="table">
+              <caption part="caption"></caption>
+              <thead part="thead"><tr></tr></thead>
+              <tbody part="tbody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" part="pagination">
+            <div class="side">
+              <button class="prev" aria-label="Page précédente">◀</button>
+              <div class="pages" aria-live="polite"></div>
+              <button class="next" aria-label="Page suivante">▶</button>
+            </div>
+            <div class="side">
+              <label>Par page
+                <select class="size">
+                  <option value="5">5</option>
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
+      `;
+
+      class DataTable extends HTMLElement {
+        static get observedAttributes() {
+          return ["page-size", "caption", "selectable"];
+        }
+
+        #root;
+        #search;
+        #theadRow;
+        #tbody;
+        #caption;
+        #pages;
+        #prev;
+        #next;
+        #size;
+        #data = [];
+        #columns = [];
+        #filtered = [];
+        #page = 1;
+        #pageSize = 10;
+        #sortKey = null;
+        #sortDir = 1; // 1 asc, -1 desc
+        #selection = new Set();
+
+        constructor() {
+          super();
+          const shadow = this.attachShadow({ mode: "open" });
+          shadow.appendChild(template.content.cloneNode(true));
+          this.#root = shadow.querySelector(".wrapper");
+          this.#search = shadow.querySelector('input[type="search"]');
+          this.#theadRow = shadow.querySelector("thead tr");
+          this.#tbody = shadow.querySelector("tbody");
+          this.#caption = shadow.querySelector("caption");
+          this.#pages = shadow.querySelector(".pages");
+          this.#prev = shadow.querySelector(".prev");
+          this.#next = shadow.querySelector(".next");
+          this.#size = shadow.querySelector(".size");
+        }
+
+        connectedCallback() {
+          // Defaults
+          if (this.hasAttribute("page-size"))
+            this.#pageSize = parseInt(
+              this.getAttribute("page-size") || "10",
+              10
+            );
+          this.#size.value = String(this.#pageSize);
+          this.#caption.textContent = this.getAttribute("caption") || "";
+
+          // Events
+          this.#search.addEventListener("input", () => {
+            this.#page = 1;
+            this.#applyFilterSortPaginate();
+          });
+          this.#prev.addEventListener("click", () => {
+            if (this.#page > 1) {
+              this.#page--;
+              this.#renderBody();
+              this.#renderPager();
+            }
+          });
+          this.#next.addEventListener("click", () => {
+            const totalPages = this.#totalPages();
+            if (this.#page < totalPages) {
+              this.#page++;
+              this.#renderBody();
+              this.#renderPager();
+            }
+          });
+          this.#size.addEventListener("change", () => {
+            this.#pageSize = parseInt(this.#size.value, 10);
+            this.#page = 1;
+            this.#applyFilterSortPaginate();
+          });
+
+          this.#render();
+        }
+
+        attributeChangedCallback(name, oldV, newV) {
+          if (name === "page-size" && oldV !== newV) {
+            this.#pageSize = parseInt(newV || "10", 10);
+            if (this.#size) this.#size.value = String(this.#pageSize);
+            this.#applyFilterSortPaginate();
+          }
+          if (name === "caption" && this.#caption)
+            this.#caption.textContent = newV || "";
+          if (name === "selectable" && oldV !== newV) this.#renderHeader();
+        }
+
+        // ===== Public API =====
+        get data() {
+          return this.#data;
+        }
+        set data(rows) {
+          this.#data = Array.isArray(rows) ? rows : [];
+          this.#selection.clear();
+          this.#page = 1;
+          this.#applyFilterSortPaginate();
+        }
+
+        get columns() {
+          return this.#columns;
+        }
+        set columns(cols) {
+          this.#columns = Array.isArray(cols) ? cols : [];
+          this.#renderHeader();
+          this.#applyFilterSortPaginate();
+        }
+
+        clearSelection() {
+          this.#selection.clear();
+          this.#updateSelectAllState();
+          this.#emitSelection();
+          this.#renderBody();
+        }
+        get selectedKeys() {
+          return Array.from(this.#selection);
+        }
+
+        // ===== Internal =====
+        #render() {
+          this.#renderHeader();
+          this.#applyFilterSortPaginate();
+        }
+
+        #renderHeader() {
+          if (!this.#theadRow) return;
+          this.#theadRow.innerHTML = "";
+
+          const makeTh = (col) => {
+            const th = document.createElement("th");
+            th.part = "th";
+            th.scope = "col";
+            th.textContent = col.label ?? col.key;
+            if (col.width) th.style.width = col.width;
+            if (col.sortable !== false) {
+              th.classList.add("sortable");
+              th.tabIndex = 0;
+              const chevron = document.createElement("span");
+              chevron.className = "chevron";
+              chevron.textContent = "▾";
+              th.appendChild(chevron);
+              const clickSort = () => this.#toggleSort(col.key);
+              th.addEventListener("click", clickSort);
+              th.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  clickSort();
+                }
+              });
+              if (this.#sortKey === col.key)
+                th.setAttribute(
+                  "aria-sort",
+                  this.#sortDir === 1 ? "ascending" : "descending"
+                );
+              else th.removeAttribute("aria-sort");
+            }
+            return th;
+          };
+
+          if (this.hasAttribute("selectable")) {
+            const thSel = document.createElement("th");
+            thSel.scope = "col";
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.className = "checkbox";
+            cb.setAttribute("aria-label", "Tout sélectionner");
+            cb.addEventListener("change", () =>
+              this.#toggleSelectAll(cb.checked)
+            );
+            thSel.appendChild(cb);
+            this.#theadRow.appendChild(thSel);
+          }
+
+          this.#columns.forEach((col) =>
+            this.#theadRow.appendChild(makeTh(col))
+          );
+        }
+
+        #toggleSort(key) {
+          if (this.#sortKey === key) {
+            this.#sortDir = -this.#sortDir;
+          } else {
+            this.#sortKey = key;
+            this.#sortDir = 1;
+          }
+          this.#applyFilterSortPaginate();
+          // Update aria-sort on headers
+          Array.from(this.#theadRow.children).forEach((th) =>
+            th.removeAttribute("aria-sort")
+          );
+          const headerIndex =
+            (this.hasAttribute("selectable") ? 1 : 0) +
+            this.#columns.findIndex((c) => c.key === this.#sortKey);
+          const th = this.#theadRow.children[headerIndex];
+          if (th)
+            th.setAttribute(
+              "aria-sort",
+              this.#sortDir === 1 ? "ascending" : "descending"
+            );
+        }
+
+        #applyFilterSortPaginate() {
+          const q = (this.#search?.value || "").trim().toLowerCase();
+          // Filter
+          const filtered = q
+            ? this.#data.filter((row) => {
+                return this.#columns.some((col) =>
+                  String(this.#getCellValue(row, col)).toLowerCase().includes(q)
+                );
+              })
+            : [...this.#data];
+          // Sort
+          if (this.#sortKey) {
+            filtered.sort((a, b) => {
+              const va = this.#getCellValue(a, { key: this.#sortKey });
+              const vb = this.#getCellValue(b, { key: this.#sortKey });
+              if (va == null && vb == null) return 0;
+              if (va == null) return -1 * this.#sortDir;
+              if (vb == null) return 1 * this.#sortDir;
+              if (typeof va === "number" && typeof vb === "number")
+                return (va - vb) * this.#sortDir;
+              return (
+                String(va).localeCompare(String(vb), undefined, {
+                  numeric: true,
+                  sensitivity: "base",
+                }) * this.#sortDir
+              );
+            });
+          }
+          this.#filtered = filtered;
+          this.#renderBody();
+          this.#renderPager();
+        }
+
+        #getCellValue(row, col) {
+          const val = col.key?.split(".").reduce((acc, k) => acc?.[k], row);
+          return col.formatter ? col.formatter(val, row) : val;
+        }
+
+        #renderBody() {
+          this.#tbody.innerHTML = "";
+          const start = (this.#page - 1) * this.#pageSize;
+          const pageRows = this.#filtered.slice(start, start + this.#pageSize);
+
+          pageRows.forEach((row, idx) => {
+            const tr = document.createElement("tr");
+            tr.tabIndex = 0;
+            tr.setAttribute("role", "row");
+            tr.addEventListener("click", () => this.#emitRowClick(row));
+            tr.addEventListener("keydown", (e) => {
+              if (e.key === "Enter") this.#emitRowClick(row);
+            });
+
+            if (this.hasAttribute("selectable")) {
+              const tdSel = document.createElement("td");
+              const key = row.id ?? `${start + idx}`; // default key
+              const cb = document.createElement("input");
+              cb.type = "checkbox";
+              cb.className = "checkbox";
+              cb.checked = this.#selection.has(key);
+              cb.addEventListener("change", () => {
+                if (cb.checked) this.#selection.add(key);
+                else this.#selection.delete(key);
+                this.#emitSelection();
+                this.#updateSelectAllState();
+              });
+              tr.setAttribute(
+                "aria-selected",
+                String(this.#selection.has(key))
+              );
+              tdSel.appendChild(cb);
+              tr.appendChild(tdSel);
+            }
+
+            for (const col of this.#columns) {
+              const td = document.createElement("td");
+              let value = this.#getCellValue(row, col);
+              if (value == null) value = "";
+              td.textContent = String(value);
+              tr.appendChild(td);
+            }
+
+            this.#tbody.appendChild(tr);
+          });
+        }
+
+        #totalPages() {
+          return Math.max(1, Math.ceil(this.#filtered.length / this.#pageSize));
+        }
+
+        #renderPager() {
+          const totalPages = this.#totalPages();
+          this.#prev.disabled = this.#page <= 1;
+          this.#next.disabled = this.#page >= totalPages;
+          this.#pages.innerHTML = "";
+          const makeBtn = (n) => {
+            const b = document.createElement("button");
+            b.className = "page-btn";
+            b.textContent = String(n);
+            b.setAttribute("aria-label", `Aller à la page ${n}`);
+            if (n === this.#page) b.setAttribute("aria-current", "true");
+            b.addEventListener("click", () => {
+              this.#page = n;
+              this.#renderBody();
+              this.#renderPager();
+            });
+            return b;
+          };
+          // Compact pager (1 ... current-1 current current+1 ... last)
+          const pages = new Set(
+            [1, this.#page - 1, this.#page, this.#page + 1, totalPages].filter(
+              (n) => n >= 1 && n <= totalPages
+            )
+          );
+          let last = 0;
+          [...pages]
+            .sort((a, b) => a - b)
+            .forEach((n) => {
+              if (n - last > 1)
+                this.#pages.appendChild(document.createTextNode("…"));
+              this.#pages.appendChild(makeBtn(n));
+              last = n;
+            });
+        }
+
+        #toggleSelectAll(checked) {
+          const start = (this.#page - 1) * this.#pageSize;
+          const pageRows = this.#filtered.slice(start, start + this.#pageSize);
+          pageRows.forEach((row, idx) => {
+            const key = row.id ?? `${start + idx}`;
+            if (checked) this.#selection.add(key);
+            else this.#selection.delete(key);
+          });
+          this.#emitSelection();
+          this.#renderBody();
+        }
+
+        #updateSelectAllState() {
+          if (!this.hasAttribute("selectable")) return;
+          const thCb = this.#theadRow.querySelector('input[type="checkbox"]');
+          if (!thCb) return;
+          const start = (this.#page - 1) * this.#pageSize;
+          const pageRows = this.#filtered.slice(start, start + this.#pageSize);
+          const keys = pageRows.map((r, i) => r.id ?? `${start + i}`);
+          const selectedCount = keys.filter((k) =>
+            this.#selection.has(k)
+          ).length;
+          thCb.checked = selectedCount > 0 && selectedCount === keys.length;
+          thCb.indeterminate = selectedCount > 0 && selectedCount < keys.length;
+        }
+
+        #emitRowClick(row) {
+          this.dispatchEvent(
+            new CustomEvent("rowclick", { detail: { row }, bubbles: true })
+          );
+        }
+        #emitSelection() {
+          this.dispatchEvent(
+            new CustomEvent("selectionchange", {
+              detail: { keys: this.selectedKeys },
+              bubbles: true,
+            })
+          );
+        }
+      }
+
+      customElements.define("x-data-table", DataTable);
+
+      // ===== Demo data & columns =====
+      const people = [
+        {
+          id: 1,
+          name: "Alice Martin",
+          role: "Frontend",
+          age: 29,
+          city: "Lille",
+          salary: 50000,
+        },
+        {
+          id: 2,
+          name: "Bruno Lefebvre",
+          role: "Backend",
+          age: 34,
+          city: "Lyon",
+          salary: 60000,
+        },
+        {
+          id: 3,
+          name: "Camille Robert",
+          role: "UX Designer",
+          age: 27,
+          city: "Paris",
+          salary: 54000,
+        },
+        {
+          id: 4,
+          name: "David André",
+          role: "DevOps",
+          age: 38,
+          city: "Nantes",
+          salary: 70000,
+        },
+        {
+          id: 5,
+          name: "Emma Dupont",
+          role: "PO",
+          age: 31,
+          city: "Bordeaux",
+          salary: 62000,
+        },
+        {
+          id: 6,
+          name: "Farid Haddad",
+          role: "QA",
+          age: 41,
+          city: "Marseille",
+          salary: 58000,
+        },
+        {
+          id: 7,
+          name: "Gaël Rousseau",
+          role: "SRE",
+          age: 36,
+          city: "Rennes",
+          salary: 65000,
+        },
+        {
+          id: 8,
+          name: "Hugo Colin",
+          role: "Fullstack",
+          age: 28,
+          city: "Lille",
+          salary: 55000,
+        },
+        {
+          id: 9,
+          name: "Inès Benali",
+          role: "Data",
+          age: 32,
+          city: "Toulouse",
+          salary: 60000,
+        },
+        {
+          id: 10,
+          name: "Jules Caron",
+          role: "Backend",
+          age: 26,
+          city: "Dijon",
+          salary: 45000,
+        },
+        {
+          id: 11,
+          name: "Kenza K.",
+          role: "Mobile",
+          age: 30,
+          city: "Nice",
+          salary: 52000,
+        },
+        {
+          id: 12,
+          name: "Léa Bauche",
+          role: "UX Writer",
+          age: 33,
+          city: "Lille",
+          salary: 48000,
+        },
+      ];
+
+      const cols = [
+        { key: "name", label: "Nom", width: "30%" },
+        { key: "role", label: "Rôle" },
+        { key: "age", label: "Âge", sortable: true },
+        { key: "city", label: "Ville" },
+        { key: "salary", label: "Salaire" },
+      ];
+
+      const table = document.getElementById("peopleTable");
+      table.columns = cols;
+      table.data = people;
+
+      // Events example
+      table.addEventListener("rowclick", (e) => {
+        const { row } = e.detail;
+        console.log("Row click →", row);
+      });
+      table.addEventListener("selectionchange", (e) => {
+        console.log("Selection →", e.detail.keys);
+      });
+    </script>
+  </body>
+</html>
